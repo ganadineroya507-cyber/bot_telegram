@@ -4,17 +4,21 @@ import time
 import random
 import threading
 from datetime import datetime
-from flask import Flask, render_template_string, redirect
+from flask import Flask, redirect
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 
+# ===== CONFIG =====
 TOKEN = os.getenv("TOKEN")
 ADMIN_ID = os.getenv("ADMIN_ID")
 
 if ADMIN_ID:
     ADMIN_ID = int(ADMIN_ID)
 
-# ===== CONFIG =====
+# 👉 TU GRUPO DE WHATSAPP
+WHATSAPP = "https://chat.whatsapp.com/TU_LINK_AQUI"
+
+# ===== CONFIG ECONOMÍA =====
 REWARD_AD = 0.000125
 REWARD_TASK = 0.0035
 BONUS = 0.03
@@ -26,28 +30,10 @@ LIMITE_ADS = 100
 TASKS = [
     "https://omg10.com/4/10904191",
     "https://omg10.com/4/10904194",
-    "https://omg10.com/4/10904192",
-    "https://omg10.com/4/10904190",
-    "https://omg10.com/4/10904189",
-    "https://omg10.com/4/10904188",
-    "https://omg10.com/4/10904193",
-    "https://omg10.com/4/10904195",
-    "https://omg10.com/4/10904196",
-    "https://omg10.com/4/10904836"
 ]
 
 ADS = [
     "https://theoreticalassertshame.com/yx0a5f37?key=292b2444288218b819570c449013aa72",
-    "https://theoreticalassertshame.com/fuf8cjkg?key=30325938fd8887ac577057a3084780ad",
-    "https://theoreticalassertshame.com/m96bxwhv0?key=aca07b0fb605c3cbaf5684855c18444d",
-    "https://theoreticalassertshame.com/d5up4rzfmd?key=577be8abdeeea6b9ce2ab09a17989f6e",
-    "https://theoreticalassertshame.com/ka4rk9wi?key=522dca01b077daf8d0e7c351aa405240",
-    "https://theoreticalassertshame.com/jhdiprui?key=16b72e824b8f6f017159222e7e932a54",
-    "https://theoreticalassertshame.com/dcx23snw?key=b6261e043fdc5fdbc3680edfa31ece84",
-    "https://theoreticalassertshame.com/i41pw8tym?key=6de2ae6618162841dfc95130df72f97c",
-    "https://theoreticalassertshame.com/ktdvs4u1q?key=34d9ea14248859c7791f862687cee605",
-    "https://theoreticalassertshame.com/vqhunt3n38?key=c2f1c6a34412a17ecbe13b8c6e5baa40",
-    "https://theoreticalassertshame.com/j2j6ejcx?key=e2fb6ca1a20fa321865f79cf1e41f03c"
 ]
 
 # ===== DB =====
@@ -81,7 +67,7 @@ conn.commit()
 menu = ReplyKeyboardMarkup([
     ["💰 Balance", "📺 Ver anuncios"],
     ["📋 Tareas", "🎁 Bono"],
-    ["💸 Retirar"]
+    ["💸 Retirar", "👥 Grupo"]
 ], resize_keyboard=True)
 
 # ===== START =====
@@ -89,7 +75,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     cursor.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (user_id,))
     conn.commit()
-    await update.message.reply_text("🔥 BOT ACTIVO $$$", reply_markup=menu)
+
+    await update.message.reply_text(
+        "🔥 BIENVENIDO AL BOT $$$\n\nGana dinero viendo anuncios 🚀",
+        reply_markup=menu
+    )
+
+# ===== GRUPO =====
+async def grupo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(f"👥 Únete al grupo:\n{WHATSAPP}")
 
 # ===== BALANCE =====
 async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -118,10 +112,13 @@ async def ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cursor.execute("UPDATE users SET last_ad=? WHERE user_id=?", (int(time.time()), user_id))
     conn.commit()
 
-    await update.message.reply_text(f"🔗 {ad}\n⏳ {wait}s")
+    await update.message.reply_text(f"🔗 {ad}\n⏳ Espera {wait}s y escribe OK")
 
-# ===== CONFIRM ADS =====
+# ===== CONFIRM =====
 async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message.text.lower() != "ok":
+        return
+
     start = context.user_data.get("time")
     wait = context.user_data.get("wait")
 
@@ -129,7 +126,7 @@ async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if time.time() - start < wait:
-        return
+        return await update.message.reply_text("⏳ Aún no")
 
     user_id = update.effective_user.id
 
@@ -144,32 +141,11 @@ async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ===== TAREAS =====
 async def tareas(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = "📋 TAREAS DISPONIBLES:\n\n"
+    msg = "📋 TAREAS:\n\n"
     for i, t in enumerate(TASKS, 1):
         msg += f"{i}. {t}\n\n"
-    msg += "📩 Envía el número para validar"
+
     await update.message.reply_text(msg)
-
-# ===== VALIDAR TAREA =====
-async def validar(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message.text.isdigit():
-        return
-
-    user_id = update.effective_user.id
-    last_task = cursor.execute(
-        "SELECT last_task FROM users WHERE user_id=?", (user_id,)
-    ).fetchone()[0]
-
-    if time.time() - last_task < 60:
-        return await update.message.reply_text("⛔ Espera 1 minuto")
-
-    cursor.execute(
-        "UPDATE users SET balance=balance+?, last_task=? WHERE user_id=?",
-        (REWARD_TASK, int(time.time()), user_id)
-    )
-    conn.commit()
-
-    await update.message.reply_text(f"✅ +{REWARD_TASK}")
 
 # ===== BONUS =====
 async def bonus(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -202,7 +178,7 @@ async def retirar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await update.message.reply_text("❌ Mínimo $1")
 
     context.user_data["retiro"] = True
-    await update.message.reply_text("Envía método + datos")
+    await update.message.reply_text("Envía wallet")
 
 # ===== WALLET =====
 async def wallet(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -221,71 +197,61 @@ async def wallet(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.commit()
 
     context.user_data.clear()
-
     await update.message.reply_text("✅ Retiro enviado")
 
-# ===== MENU =====
-async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    t = update.message.text
+# ===== ADMIN =====
+async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
 
-    if "Balance" in t:
+    users = cursor.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+    await update.message.reply_text(f"👑 Admin\nUsuarios: {users}")
+
+# ===== HANDLER =====
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+
+    if "Balance" in text:
         await balance(update, context)
-    elif "Ver anuncios" in t:
+    elif "Ver anuncios" in text:
         await ads(update, context)
-    elif "Tareas" in t:
+    elif "Tareas" in text:
         await tareas(update, context)
-    elif "Bono" in t:
+    elif "Bono" in text:
         await bonus(update, context)
-    elif "Retirar" in t:
+    elif "Retirar" in text:
         await retirar(update, context)
+    elif "Grupo" in text:
+        await grupo(update, context)
     else:
         await confirm(update, context)
-        await validar(update, context)
         await wallet(update, context)
 
-# ===== PANEL WEB =====
+# ===== WEB =====
 web = Flask(__name__)
 
 @web.route("/")
 def panel():
-    users = cursor.execute("SELECT * FROM users").fetchall()
-    retiros = cursor.execute("SELECT * FROM withdrawals WHERE status='pendiente'").fetchall()
-
-    html = "<h1>PANEL</h1>"
-
-    html += "<h2>Usuarios</h2>"
-    for u in users:
-        html += f"<p>{u}</p>"
-
-    html += "<h2>Retiros</h2>"
-    for r in retiros:
-        html += f"<p>{r} <a href='/pagar/{r[0]}'>Pagar</a></p>"
-
-    return html
-
-@web.route("/pagar/<id>")
-def pagar(id):
-    cursor.execute("UPDATE withdrawals SET status='pagado' WHERE id=?", (id,))
-    conn.commit()
-    return redirect("/")
+    return "BOT ONLINE"
 
 def run_web():
     web.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
 
-# ===== RUN =====
+# ===== BOT =====
 def run_bot():
+    if not TOKEN:
+        print("❌ TOKEN no encontrado")
+        return
+
     app_bot = ApplicationBuilder().token(TOKEN).build()
-    
+
     app_bot.add_handler(CommandHandler("start", start))
     app_bot.add_handler(CommandHandler("admin", admin))
     app_bot.add_handler(MessageHandler(filters.TEXT, handle_message))
-    
+
     print("🤖 BOT iniciado")
     app_bot.run_polling()
 
-# Ejecutar bot en segundo plano
+# ===== RUN =====
 threading.Thread(target=run_bot).start()
-
-# Ejecutar Flask
-print("🌐 Panel web iniciado")
-app.run(host="0.0.0.0", port=8080)
+threading.Thread(target=run_web).start()
