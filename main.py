@@ -3,8 +3,9 @@ import sqlite3
 import time
 import random
 import threading
+import asyncio
 from datetime import datetime
-from flask import Flask, redirect
+from flask import Flask
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 
@@ -12,12 +13,9 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, Con
 TOKEN = os.getenv("TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "8466239666"))
 
-if not TOKEN:
-    raise Exception("❌ TOKEN no configurado en Railway")
-
 WHATSAPP = "https://chat.whatsapp.com/TU_LINK_AQUI"
 
-# ===== CONFIG ECONOMÍA =====
+# ===== ECONOMÍA =====
 REWARD_AD = 0.000125
 REWARD_TASK = 0.0035
 BONUS = 0.03
@@ -200,13 +198,7 @@ async def wallet(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     await update.message.reply_text("✅ Retiro enviado")
 
-async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        return
-
-    users = cursor.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-    await update.message.reply_text(f"👑 Admin\nUsuarios: {users}")
-
+# ===== HANDLER =====
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
 
@@ -230,23 +222,22 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 web = Flask(__name__)
 
 @web.route("/")
-def panel():
+def home():
     return "BOT ONLINE"
 
-def run_web():
-    web.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
-
-# ===== BOT =====
+# ===== RUN BOT (FIX ASYNC) =====
 def run_bot():
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
     app_bot = ApplicationBuilder().token(TOKEN).build()
 
     app_bot.add_handler(CommandHandler("start", start))
-    app_bot.add_handler(CommandHandler("admin", admin))
     app_bot.add_handler(MessageHandler(filters.TEXT, handle_message))
 
     print("🤖 BOT iniciado")
-    app_bot.run_polling()
+    loop.run_until_complete(app_bot.run_polling())
 
 # ===== RUN =====
 threading.Thread(target=run_bot).start()
-threading.Thread(target=run_web).start()
+web.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
