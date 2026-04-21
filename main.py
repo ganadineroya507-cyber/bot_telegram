@@ -273,12 +273,23 @@ def run_web():
     web.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
 
 # ===== RUN =====
-app = ApplicationBuilder().token(TOKEN).build()
+def main():
+    global TOKEN
 
-app.add_handler(CommandHandler("start", start))
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, menu_handler))
+    if not TOKEN:
+        print("❌ TOKEN no encontrado")
+        return
 
-threading.Thread(target=run_web).start()
+    app = ApplicationBuilder().token(TOKEN).build()
 
-print("🔥 BOT + PANEL ONLINE")
-app.run_polling()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, menu_handler))
+
+    threading.Thread(target=run_web).start()
+
+    print("🔥 BOT + PANEL ONLINE")
+    app.run_polling()
+
+
+if __name__ == "__main__":
+    main()
