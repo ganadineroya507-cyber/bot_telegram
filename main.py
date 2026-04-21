@@ -4,20 +4,23 @@ import time
 import random
 import threading
 from datetime import datetime
-from flask import Flask
+from flask import Flask, redirect
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 
 # ===== CONFIG =====
-TOKEN = os.getenv("TOKEN") or "AQUI_TU_TOKEN_DE_BOTFATHER"
-ADMIN_ID = int(os.getenv("ADMIN_ID") or "8466239666")
+TOKEN = os.getenv("TOKEN")
+ADMIN_ID = int(os.getenv("ADMIN_ID", "8466239666"))
 
-WHATSAPP = "https://chat.whatsapp.com/https://chat.whatsapp.com/GO3mMxh7PN1E2ntKq0KE6x?mode=gi_t"
+if not TOKEN:
+    raise Exception("❌ TOKEN no configurado en Railway")
+
+WHATSAPP = "https://chat.whatsapp.com/TU_LINK_AQUI"
 
 # ===== CONFIG ECONOMÍA =====
-REWARD_AD = 0.000225
+REWARD_AD = 0.000125
 REWARD_TASK = 0.0035
-BONUS = 0.05
+BONUS = 0.03
 MIN_RETIRO = 1
 MAX_RETIRO = 10
 LIMITE_ADS = 100
@@ -84,23 +87,20 @@ menu = ReplyKeyboardMarkup([
     ["💸 Retirar", "👥 Grupo"]
 ], resize_keyboard=True)
 
-# ===== START =====
+# ===== FUNCIONES =====
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     cursor.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (user_id,))
     conn.commit()
     await update.message.reply_text("🔥 BOT ACTIVO $$$", reply_markup=menu)
 
-# ===== GRUPO =====
 async def grupo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"👥 Grupo:\n{WHATSAPP}")
 
-# ===== BALANCE =====
 async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bal = cursor.execute("SELECT balance FROM users WHERE user_id=?", (update.effective_user.id,)).fetchone()[0]
     await update.message.reply_text(f"💰 ${bal:.6f}")
 
-# ===== ADS =====
 async def ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     ads_today, last_ad = cursor.execute(
@@ -124,7 +124,6 @@ async def ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(f"🔗 {ad}\n⏳ Espera {wait}s y escribe OK")
 
-# ===== CONFIRM =====
 async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.text.lower() != "ok":
         return
@@ -146,14 +145,12 @@ async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     await update.message.reply_text(f"💸 +{REWARD_AD}")
 
-# ===== TAREAS =====
 async def tareas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = "📋 TAREAS:\n\n"
     for i, t in enumerate(TASKS, 1):
         msg += f"{i}. {t}\n\n"
     await update.message.reply_text(msg)
 
-# ===== BONUS =====
 async def bonus(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     today = str(datetime.now().date())
@@ -173,7 +170,6 @@ async def bonus(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(f"🎁 +{BONUS}")
 
-# ===== RETIRO =====
 async def retirar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     bal = cursor.execute(
@@ -186,7 +182,6 @@ async def retirar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["retiro"] = True
     await update.message.reply_text("Envía tu wallet")
 
-# ===== WALLET =====
 async def wallet(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.user_data.get("retiro"):
         return
@@ -205,7 +200,6 @@ async def wallet(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     await update.message.reply_text("✅ Retiro enviado")
 
-# ===== ADMIN =====
 async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
@@ -213,7 +207,6 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     users = cursor.execute("SELECT COUNT(*) FROM users").fetchone()[0]
     await update.message.reply_text(f"👑 Admin\nUsuarios: {users}")
 
-# ===== HANDLER =====
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
 
@@ -245,10 +238,6 @@ def run_web():
 
 # ===== BOT =====
 def run_bot():
-    if not TOKEN:
-        print("❌ TOKEN no configurado")
-        return
-
     app_bot = ApplicationBuilder().token(TOKEN).build()
 
     app_bot.add_handler(CommandHandler("start", start))
@@ -260,4 +249,4 @@ def run_bot():
 
 # ===== RUN =====
 threading.Thread(target=run_bot).start()
-threading.Thread(target=run_web).start() losimport los
+threading.Thread(target=run_web).start()
