@@ -9,7 +9,10 @@ from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 
 TOKEN = os.getenv("TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_ID"))
+ADMIN_ID = os.getenv("ADMIN_ID")
+
+if ADMIN_ID:
+    ADMIN_ID = int(ADMIN_ID)
 
 # ===== CONFIG =====
 REWARD_AD = 0.000125
