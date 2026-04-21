@@ -273,23 +273,19 @@ def run_web():
     web.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
 
 # ===== RUN =====
-def main():
-    global TOKEN
+def run_bot():
+    app_bot = ApplicationBuilder().token(TOKEN).build()
+    
+    app_bot.add_handler(CommandHandler("start", start))
+    app_bot.add_handler(CommandHandler("admin", admin))
+    app_bot.add_handler(MessageHandler(filters.TEXT, handle_message))
+    
+    print("🤖 BOT iniciado")
+    app_bot.run_polling()
 
-    if not TOKEN:
-        print("❌ TOKEN no encontrado")
-        return
+# Ejecutar bot en segundo plano
+threading.Thread(target=run_bot).start()
 
-    app = ApplicationBuilder().token(TOKEN).build()
-
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, menu_handler))
-
-    threading.Thread(target=run_web).start()
-
-    print("🔥 BOT + PANEL ONLINE")
-    app.run_polling()
-
-
-if __name__ == "__main__":
-    main()
+# Ejecutar Flask
+print("🌐 Panel web iniciado")
+app.run(host="0.0.0.0", port=8080)
