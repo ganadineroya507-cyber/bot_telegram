@@ -1,3 +1,4 @@
+print("🚀 INICIANDO APP...")
 import os
 import sqlite3
 import time
@@ -279,8 +280,7 @@ def run_web():
 
 # ===== MAIN =====
 def run_bot():
-    try:
-        print("🤖 BOT ENCENDIENDO...")
+    print("🤖 BOT ARRANCANDO...")
 
         app = ApplicationBuilder().token(TOKEN).build()
 
