@@ -3,19 +3,18 @@ import sqlite3
 import time
 import random
 import threading
-import asyncio
 from datetime import datetime
 from flask import Flask
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 
 # ===== CONFIG =====
-TOKEN = os.getenv("TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_ID", "8466239666"))
+TOKEN = os.getenv("TOKEN") or "AQUI_TU_TOKEN_DE_BOTFATHER"
+ADMIN_ID = int(os.getenv("ADMIN_ID") or "8466239666")
 
 WHATSAPP = "https://chat.whatsapp.com/TU_LINK_AQUI"
 
-# ===== ECONOMÍA =====
+# ===== CONFIG ECONOMÍA =====
 REWARD_AD = 0.000125
 REWARD_TASK = 0.0035
 BONUS = 0.03
@@ -61,7 +60,6 @@ CREATE TABLE IF NOT EXISTS users (
     balance REAL DEFAULT 0,
     ads_today INTEGER DEFAULT 0,
     last_ad INTEGER DEFAULT 0,
-    last_task INTEGER DEFAULT 0,
     last_bonus TEXT
 )
 """)
@@ -198,7 +196,13 @@ async def wallet(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     await update.message.reply_text("✅ Retiro enviado")
 
-# ===== HANDLER =====
+async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+
+    users = cursor.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+    await update.message.reply_text(f"👑 Admin\nUsuarios: {users}")
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
 
@@ -214,30 +218,28 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await retirar(update, context)
     elif "Grupo" in text:
         await grupo(update, context)
-    else:
+    elif text.lower() == "ok":
         await confirm(update, context)
-        await wallet(update, context)
 
-# ===== WEB =====
+# ===== FLASK (para Railway) =====
 web = Flask(__name__)
 
 @web.route("/")
 def home():
     return "BOT ONLINE"
 
-# ===== RUN BOT (FIX ASYNC) =====
+# ===== BOT =====
 def run_bot():
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-
     app_bot = ApplicationBuilder().token(TOKEN).build()
 
     app_bot.add_handler(CommandHandler("start", start))
+    app_bot.add_handler(CommandHandler("admin", admin))
     app_bot.add_handler(MessageHandler(filters.TEXT, handle_message))
 
-    print("🤖 BOT iniciado")
-    loop.run_until_complete(app_bot.run_polling())
+    print("🤖 BOT iniciado...")
+    app_bot.run_polling()
 
 # ===== RUN =====
-threading.Thread(target=run_bot).start()
-web.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+if __name__ == "__main__":
+    threading.Thread(target=run_bot).start()
+    web.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
