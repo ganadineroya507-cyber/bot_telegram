@@ -279,13 +279,20 @@ def run_web():
 
 # ===== MAIN =====
 def main():
-    app = ApplicationBuilder().token(TOKEN).build()
+    import threading
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT, handle))
+    def run_bot():
+        app = ApplicationBuilder().token(TOKEN).build()
 
-    threading.Thread(target=lambda: app.run_polling()).start()
-    run_web()
+        app.add_handler(CommandHandler("start", start))
+        app.add_handler(MessageHandler(filters.TEXT, handle))
 
-if __name__ == "__main__":
-    main()
+        print("🤖 BOT ACTIVO")
+        app.run_polling()
+
+    # hilo bot
+    threading.Thread(target=run_bot).start()
+
+    # servidor web (principal)
+    port = int(os.environ.get("PORT", 8080))
+    app_web.run(host="0.0.0.0", port=port)
