@@ -1,4 +1,4 @@
-import os
+ñimport os
 import sqlite3
 import time
 import random
@@ -263,14 +263,23 @@ def run_web():
     app_web.run(host="0.0.0.0", port=port)
 
 # ===== MAIN FINAL =====
-def main():
+import asyncio
+
+async def run_bot():
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT, handle))
 
-    threading.Thread(target=lambda: app.run_polling()).start()
-    run_web()
+    print("🤖 BOT ACTIVO")
+    await app.run_polling()
+
+def main():
+    # Flask en segundo plano
+    threading.Thread(target=run_web).start()
+
+    # Bot en el loop principal (correcto)
+    asyncio.run(run_bot())
 
 if __name__ == "__main__":
     main()
