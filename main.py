@@ -282,19 +282,22 @@ def main():
     import threading
 
     def run_bot():
-        print("🤖 Iniciando bot...")
-        bot_app = ApplicationBuilder().token(TOKEN).build()
+        try:
+            print("🤖 Bot iniciado")
+            bot = ApplicationBuilder().token(TOKEN).build()
 
-        bot_app.add_handler(CommandHandler("start", start))
-        bot_app.add_handler(MessageHandler(filters.TEXT, handle))
+            bot.add_handler(CommandHandler("start", start))
+            bot.add_handler(MessageHandler(filters.TEXT, handle))
 
-        bot_app.run_polling()
+            bot.run_polling()
+        except Exception as e:
+            print("ERROR BOT:", e)
 
-    # iniciar bot en hilo separado
-    t = threading.Thread(target=run_bot)
-    t.start()
+    # iniciar bot en segundo plano
+    threading.Thread(target=run_bot, daemon=True).start()
 
-    print("🌐 Iniciando web...")
+    print("🌐 Web iniciada")
 
+    # IMPORTANTE: esto mantiene vivo Railway
     port = int(os.environ.get("PORT", 8080))
     app_web.run(host="0.0.0.0", port=port)
