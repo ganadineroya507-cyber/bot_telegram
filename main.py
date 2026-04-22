@@ -282,17 +282,19 @@ def main():
     import threading
 
     def run_bot():
-        app = ApplicationBuilder().token(TOKEN).build()
+        print("🤖 Iniciando bot...")
+        bot_app = ApplicationBuilder().token(TOKEN).build()
 
-        app.add_handler(CommandHandler("start", start))
-        app.add_handler(MessageHandler(filters.TEXT, handle))
+        bot_app.add_handler(CommandHandler("start", start))
+        bot_app.add_handler(MessageHandler(filters.TEXT, handle))
 
-        print("🤖 BOT ACTIVO")
-        app.run_polling()
+        bot_app.run_polling()
 
-    # hilo bot
-    threading.Thread(target=run_bot).start()
+    # iniciar bot en hilo separado
+    t = threading.Thread(target=run_bot)
+    t.start()
 
-    # servidor web (principal)
+    print("🌐 Iniciando web...")
+
     port = int(os.environ.get("PORT", 8080))
     app_web.run(host="0.0.0.0", port=port)
