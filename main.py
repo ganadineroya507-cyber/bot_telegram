@@ -264,23 +264,28 @@ def run_web():
 
 # ===== MAIN FINAL =====
 import asyncio
-import threading
 
-async def run_bot():
+async def main():
+    # ===== BOT =====
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT, handle))
 
-    print("🤖 BOT ACTIVO")
-    await app.run_polling()
+    # ===== WEB (Flask en background thread seguro) =====
+    from threading import Thread
+    Thread(target=run_web, daemon=True).start()
 
-def main():
-    # Ejecuta el panel web (Flask) en segundo plano
-    threading.Thread(target=run_web, daemon=True).start()
+    print("🤖 BOT + PANEL OK")
 
-    # Ejecuta el bot correctamente con asyncio
-    asyncio.run(run_bot())
+    # IMPORTANTE: esto SIEMPRE await
+    await app.initialize()
+    await app.start()
+    await app.updater.start_polling()
+
+    # mantener vivo
+    await asyncio.Event().wait()
+
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
