@@ -280,9 +280,7 @@ def run_web():
 
 # ===== MAIN =====
 def run_bot():
-    print("🤖 BOT ARRANCANDO...")
-
-        app = ApplicationBuilder().token(TOKEN).build()
+    app = ApplicationBuilder().token(TOKEN).build()
 
         app.add_handler(CommandHandler("start", start))
         app.add_handler(MessageHandler(filters.TEXT, handle))
