@@ -2,24 +2,29 @@ import os
 import sqlite3
 import time
 import random
-import threading
+import asyncio
 from datetime import datetime
-from flask import Flask
+
 from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    ContextTypes,
+    filters
+)
 
 # ===== CONFIG =====
-TOKEN = os.getenv("TOKEN") or "AQUI_TU_TOKEN_DE_BOTFATHER"
-ADMIN_ID = int(os.getenv("ADMIN_ID") or "8466239666")
+TOKEN = os.getenv("TOKEN")
+ADMIN_ID = int(os.getenv("ADMIN_ID", "8466239666"))
 
 WHATSAPP = "https://chat.whatsapp.com/TU_LINK_AQUI"
 
-# ===== CONFIG ECONOMÍA =====
+# ===== ECONOMÍA =====
 REWARD_AD = 0.000125
 REWARD_TASK = 0.0035
 BONUS = 0.03
 MIN_RETIRO = 1
-MAX_RETIRO = 10
 LIMITE_ADS = 100
 
 # ===== LINKS =====
@@ -83,24 +88,33 @@ menu = ReplyKeyboardMarkup([
     ["💸 Retirar", "👥 Grupo"]
 ], resize_keyboard=True)
 
-# ===== FUNCIONES =====
+# ===== START =====
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     cursor.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (user_id,))
     conn.commit()
     await update.message.reply_text("🔥 BOT ACTIVO $$$", reply_markup=menu)
 
+# ===== GRUPO =====
 async def grupo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"👥 Grupo:\n{WHATSAPP}")
 
+# ===== BALANCE =====
 async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    bal = cursor.execute("SELECT balance FROM users WHERE user_id=?", (update.effective_user.id,)).fetchone()[0]
+    bal = cursor.execute(
+        "SELECT balance FROM users WHERE user_id=?",
+        (update.effective_user.id,)
+    ).fetchone()[0]
+
     await update.message.reply_text(f"💰 ${bal:.6f}")
 
+# ===== ADS =====
 async def ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+
     ads_today, last_ad = cursor.execute(
-        "SELECT ads_today,last_ad FROM users WHERE user_id=?", (user_id,)
+        "SELECT ads_today,last_ad FROM users WHERE user_id=?",
+        (user_id,)
     ).fetchone()
 
     if ads_today >= LIMITE_ADS:
@@ -115,19 +129,23 @@ async def ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["time"] = time.time()
     context.user_data["wait"] = wait
 
-    cursor.execute("UPDATE users SET last_ad=? WHERE user_id=?", (int(time.time()), user_id))
+    cursor.execute(
+        "UPDATE users SET last_ad=? WHERE user_id=?",
+        (int(time.time()), user_id)
+    )
     conn.commit()
 
     await update.message.reply_text(f"🔗 {ad}\n⏳ Espera {wait}s y escribe OK")
 
+# ===== CONFIRM =====
 async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.text.lower() != "ok":
         return
 
-    start = context.user_data.get("time")
+    start_time = context.user_data.get("time")
     wait = context.user_data.get("wait")
 
-    if not start or time.time() - start < wait:
+    if not start_time or time.time() - start_time < wait:
         return await update.message.reply_text("⏳ Espera el tiempo completo")
 
     user_id = update.effective_user.id
@@ -141,18 +159,21 @@ async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     await update.message.reply_text(f"💸 +{REWARD_AD}")
 
+# ===== TAREAS =====
 async def tareas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = "📋 TAREAS:\n\n"
     for i, t in enumerate(TASKS, 1):
         msg += f"{i}. {t}\n\n"
     await update.message.reply_text(msg)
 
+# ===== BONUS =====
 async def bonus(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     today = str(datetime.now().date())
 
     last = cursor.execute(
-        "SELECT last_bonus FROM users WHERE user_id=?", (user_id,)
+        "SELECT last_bonus FROM users WHERE user_id=?",
+        (user_id,)
     ).fetchone()[0]
 
     if last == today:
@@ -166,10 +187,13 @@ async def bonus(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(f"🎁 +{BONUS}")
 
+# ===== RETIRO =====
 async def retirar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+
     bal = cursor.execute(
-        "SELECT balance FROM users WHERE user_id=?", (user_id,)
+        "SELECT balance FROM users WHERE user_id=?",
+        (user_id,)
     ).fetchone()[0]
 
     if bal < MIN_RETIRO:
@@ -178,12 +202,17 @@ async def retirar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["retiro"] = True
     await update.message.reply_text("Envía tu wallet")
 
+# ===== WALLET =====
 async def wallet(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.user_data.get("retiro"):
         return
 
     user_id = update.effective_user.id
-    bal = cursor.execute("SELECT balance FROM users WHERE user_id=?", (user_id,)).fetchone()[0]
+
+    bal = cursor.execute(
+        "SELECT balance FROM users WHERE user_id=?",
+        (user_id,)
+    ).fetchone()[0]
 
     cursor.execute(
         "INSERT INTO withdrawals (user_id,amount,wallet,status) VALUES (?,?,?,?)",
@@ -196,13 +225,15 @@ async def wallet(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     await update.message.reply_text("✅ Retiro enviado")
 
+# ===== ADMIN =====
 async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
 
     users = cursor.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-    await update.message.reply_text(f"👑 Admin\nUsuarios: {users}")
+    await update.message.reply_text(f"👑 Usuarios: {users}")
 
+# ===== HANDLER =====
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
 
@@ -218,28 +249,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await retirar(update, context)
     elif "Grupo" in text:
         await grupo(update, context)
-    elif text.lower() == "ok":
+    else:
         await confirm(update, context)
 
-# ===== FLASK (para Railway) =====
-web = Flask(__name__)
+# ===== MAIN =====
+async def main():
+    app = ApplicationBuilder().token(TOKEN).build()
 
-@web.route("/")
-def home():
-    return "BOT ONLINE"
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("admin", admin))
+    app.add_handler(MessageHandler(filters.TEXT, handle_message))
 
-# ===== BOT =====
-def run_bot():
-    app_bot = ApplicationBuilder().token(TOKEN).build()
-
-    app_bot.add_handler(CommandHandler("start", start))
-    app_bot.add_handler(CommandHandler("admin", admin))
-    app_bot.add_handler(MessageHandler(filters.TEXT, handle_message))
-
-    print("🤖 BOT iniciado...")
-    app_bot.run_polling()
+    print("🤖 BOT corriendo...")
+    await app.run_polling()
 
 # ===== RUN =====
 if __name__ == "__main__":
-    threading.Thread(target=run_bot).start()
-    web.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+    asyncio.run(main())
