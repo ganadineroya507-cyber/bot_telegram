@@ -13,6 +13,8 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, Con
 # ===== CONFIG =====
 TOKEN = os.getenv("TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "8466239666"))
+BOT_USERNAME = "ammpty507_bot"
+
 WHATSAPP = "https://chat.whatsapp.com/TU_LINK_AQUI"
 
 # ===== ECONOMÍA =====
@@ -89,13 +91,19 @@ menu = ReplyKeyboardMarkup([
     ["👥 Grupo"]
 ], resize_keyboard=True)
 
-# ===== BOT FUNCIONES =====
+# ===== START =====
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
-    ref = int(context.args[0]) if context.args else None
+    ref = None
+    if context.args:
+        try:
+            ref = int(context.args[0])
+        except:
+            pass
 
-    if not cursor.execute("SELECT 1 FROM users WHERE user_id=?", (user_id,)).fetchone():
+    cursor.execute("SELECT user_id FROM users WHERE user_id=?", (user_id,))
+    if not cursor.fetchone():
         cursor.execute("INSERT INTO users (user_id, ref_by) VALUES (?,?)", (user_id, ref))
 
         if ref and ref != user_id:
@@ -104,12 +112,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.commit()
 
     await update.message.reply_text(
-        f"🔥 BOT ACTIVO\n\nTu link:\nhttps://t.me/TU_BOT?start={user_id}",
+        f"🔥 BOT ACTIVO $$$\n\nTu link:\nhttps://t.me/{BOT_USERNAME}?start={user_id}",
         reply_markup=menu
     )
 
+# ===== ADS =====
 async def ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+
     ads_today, last_ad, progress = cursor.execute(
         "SELECT ads_today,last_ad,ads_progress FROM users WHERE user_id=?",
         (user_id,)
@@ -123,10 +133,11 @@ async def ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     wait = random.randint(35, 108)
     ad = random.choice(ADS)
+
     click_id = str(uuid.uuid4())
 
-    cursor.execute("INSERT INTO ad_tracking VALUES (?,?,?,?,?)",
-                   (click_id, user_id, ad, 0, int(time.time())))
+    cursor.execute("INSERT INTO ad_tracking (id, user_id, ad, timestamp) VALUES (?,?,?,?)",
+                   (click_id, user_id, ad, int(time.time())))
     conn.commit()
 
     context.user_data["time"] = time.time()
@@ -137,9 +148,10 @@ async def ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.commit()
 
     await update.message.reply_text(
-        f"🔗 {ad}\n\nID:{click_id}\n⏳ Espera {wait}s y escribe OK\n\n{progress}/{ADS_REQUIRED}"
+        f"🔗 {ad}\n\nID: {click_id}\n⏳ Espera {wait}s y escribe OK\n\nProgreso: {progress}/{ADS_REQUIRED}"
     )
 
+# ===== CONFIRM =====
 async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.text.lower() != "ok":
         return
@@ -149,7 +161,10 @@ async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     click_id = context.user_data.get("click_id")
 
     if not start or time.time() - start < wait:
-        return await update.message.reply_text("⏳ Tiempo incompleto")
+        return await update.message.reply_text("⏳ No completaste el tiempo")
+
+    if not click_id:
+        return
 
     row = cursor.execute("SELECT clicked FROM ad_tracking WHERE id=?", (click_id,)).fetchone()
 
@@ -159,26 +174,67 @@ async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cursor.execute("UPDATE ad_tracking SET clicked=1 WHERE id=?", (click_id,))
 
     user_id = update.effective_user.id
-    cursor.execute("UPDATE users SET ads_progress=ads_progress+1 WHERE user_id=?", (user_id,))
 
+    cursor.execute("UPDATE users SET ads_progress = ads_progress + 1 WHERE user_id=?", (user_id,))
     progress = cursor.execute("SELECT ads_progress FROM users WHERE user_id=?", (user_id,)).fetchone()[0]
 
     if progress >= ADS_REQUIRED:
         reward = REWARD_AD * ADS_REQUIRED
-        cursor.execute("UPDATE users SET balance=balance+?, ads_progress=0 WHERE user_id=?", (reward, user_id))
-        await update.message.reply_text(f"💸 {reward}")
+        cursor.execute("UPDATE users SET balance=?, ads_progress=0, ads_today=ads_today+1 WHERE user_id=?",
+                       (reward, user_id))
+        await update.message.reply_text(f"💸 GANASTE {reward}")
     else:
-        await update.message.reply_text(f"✅ {progress}/{ADS_REQUIRED}")
+        await update.message.reply_text(f"✅ ({progress}/{ADS_REQUIRED})")
 
     conn.commit()
     context.user_data.clear()
 
+# ===== OTROS =====
 async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bal = cursor.execute("SELECT balance FROM users WHERE user_id=?", (update.effective_user.id,)).fetchone()[0]
     await update.message.reply_text(f"💰 ${bal:.6f}")
 
 async def grupo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(WHATSAPP)
+    await update.message.reply_text(f"👥 {WHATSAPP}")
+
+async def ranking(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    top = cursor.execute("SELECT user_id, balance FROM users ORDER BY balance DESC LIMIT 10").fetchall()
+    msg = "🏆 TOP:\n\n"
+    for i, u in enumerate(top, 1):
+        msg += f"{i}. {u[0]} - ${u[1]:.4f}\n"
+    await update.message.reply_text(msg)
+
+async def bonus(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    today = str(datetime.now().date())
+
+    last = cursor.execute("SELECT last_bonus FROM users WHERE user_id=?", (user_id,)).fetchone()[0]
+
+    if last == today:
+        return await update.message.reply_text("❌ Ya reclamado")
+
+    cursor.execute("UPDATE users SET balance=balance+?, last_bonus=? WHERE user_id=?",
+                   (BONUS, today, user_id))
+    conn.commit()
+
+    await update.message.reply_text(f"🎁 +{BONUS}")
+
+# ===== HANDLER =====
+async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    t = update.message.text
+
+    if "Balance" in t:
+        await balance(update, context)
+    elif "Ver anuncios" in t:
+        await ads(update, context)
+    elif "Bono" in t:
+        await bonus(update, context)
+    elif "Ranking" in t:
+        await ranking(update, context)
+    elif "Grupo" in t:
+        await grupo(update, context)
+    else:
+        await confirm(update, context)
 
 # ===== PANEL WEB =====
 app_web = Flask(__name__)
@@ -187,9 +243,14 @@ app_web = Flask(__name__)
 def home():
     users = cursor.execute("SELECT COUNT(*) FROM users").fetchone()[0]
     clicks = cursor.execute("SELECT COUNT(*) FROM ad_tracking").fetchone()[0]
-    ok = cursor.execute("SELECT COUNT(*) FROM ad_tracking WHERE clicked=1").fetchone()[0]
+    clicks_ok = cursor.execute("SELECT COUNT(*) FROM ad_tracking WHERE clicked=1").fetchone()[0]
 
-    return f"<h1>Panel</h1>Usuarios:{users}<br>Clicks:{clicks}<br>OK:{ok}"
+    return f"""
+    <h1>🚀 PANEL ADMIN</h1>
+    <p>Usuarios: {users}</p>
+    <p>Clicks: {clicks}</p>
+    <p>Confirmados: {clicks_ok}</p>
+    """
 
 @app_web.route("/track/<click_id>")
 def track(click_id):
@@ -197,21 +258,19 @@ def track(click_id):
     conn.commit()
     return "OK"
 
-# ===== RUN =====
 def run_web():
     port = int(os.environ.get("PORT", 8080))
     app_web.run(host="0.0.0.0", port=port)
 
+# ===== MAIN FINAL =====
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT, confirm))
+    app.add_handler(MessageHandler(filters.TEXT, handle))
 
-    threading.Thread(target=run_web).start()
-
-    print("🤖 BOT + WEB OK")
-    app.run_polling()
+    threading.Thread(target=lambda: app.run_polling()).start()
+    run_web()
 
 if __name__ == "__main__":
     main()
