@@ -278,26 +278,29 @@ def run_web():
     app_web.run(host="0.0.0.0", port=port)
 
 # ===== MAIN =====
-def main():
+def run_bot():
+    try:
+        print("🤖 BOT ENCENDIENDO...")
+
+        app = ApplicationBuilder().token(TOKEN).build()
+
+        app.add_handler(CommandHandler("start", start))
+        app.add_handler(MessageHandler(filters.TEXT, handle))
+
+        app.run_polling()
+
+    except Exception as e:
+        print("ERROR BOT:", e)
+
+
+if __name__ == "__main__":
     import threading
 
-    def run_bot():
-        try:
-            print("🤖 Bot iniciado")
-            bot = ApplicationBuilder().token(TOKEN).build()
-
-            bot.add_handler(CommandHandler("start", start))
-            bot.add_handler(MessageHandler(filters.TEXT, handle))
-
-            bot.run_polling()
-        except Exception as e:
-            print("ERROR BOT:", e)
-
-    # iniciar bot en segundo plano
+    # arrancar bot en segundo plano
     threading.Thread(target=run_bot, daemon=True).start()
 
-    print("🌐 Web iniciada")
+    print("🌐 SERVIDOR WEB ACTIVO")
 
-    # IMPORTANTE: esto mantiene vivo Railway
+    # esto mantiene vivo Railway
     port = int(os.environ.get("PORT", 8080))
     app_web.run(host="0.0.0.0", port=port)
