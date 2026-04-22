@@ -264,6 +264,7 @@ def run_web():
 
 # ===== MAIN FINAL =====
 import asyncio
+import threading
 
 async def run_bot():
     app = ApplicationBuilder().token(TOKEN).build()
@@ -275,10 +276,10 @@ async def run_bot():
     await app.run_polling()
 
 def main():
-    # Flask en segundo plano
-    threading.Thread(target=run_web).start()
+    # Ejecuta el panel web (Flask) en segundo plano
+    threading.Thread(target=run_web, daemon=True).start()
 
-    # Bot en el loop principal (correcto)
+    # Ejecuta el bot correctamente con asyncio
     asyncio.run(run_bot())
 
 if __name__ == "__main__":
