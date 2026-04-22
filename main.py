@@ -19,6 +19,8 @@ REWARD_TASK = 0.0035
 BONUS = 0.03
 MIN_RETIRO = 1
 LIMITE_ADS = 100
+ADS_REQUIRED = 5
+REF_BONUS = 0.05
 
 # ===== LINKS =====
 TASKS = [
@@ -57,18 +59,11 @@ CREATE TABLE IF NOT EXISTS users (
     user_id INTEGER PRIMARY KEY,
     balance REAL DEFAULT 0,
     ads_today INTEGER DEFAULT 0,
+    ads_progress INTEGER DEFAULT 0,
     last_ad INTEGER DEFAULT 0,
-    last_bonus TEXT
-)
-""")
-
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS withdrawals (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER,
-    amount REAL,
-    wallet TEXT,
-    status TEXT
+    last_task INTEGER DEFAULT 0,
+    last_bonus TEXT,
+    ref_by INTEGER
 )
 """)
 
@@ -78,26 +73,44 @@ conn.commit()
 menu = ReplyKeyboardMarkup([
     ["💰 Balance", "📺 Ver anuncios"],
     ["📋 Tareas", "🎁 Bono"],
-    ["💸 Retirar", "👥 Grupo"]
+    ["🏆 Ranking", "💸 Retirar"],
+    ["👥 Grupo"]
 ], resize_keyboard=True)
 
-# ===== FUNCIONES =====
+# ===== START + REFERIDOS =====
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    cursor.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (user_id,))
+
+    ref = None
+    if context.args:
+        try:
+            ref = int(context.args[0])
+        except:
+            pass
+
+    cursor.execute("SELECT user_id FROM users WHERE user_id=?", (user_id,))
+    if not cursor.fetchone():
+        cursor.execute("INSERT INTO users (user_id, ref_by) VALUES (?,?)", (user_id, ref))
+
+        # BONUS REFERIDO
+        if ref and ref != user_id:
+            cursor.execute("UPDATE users SET balance = balance + ? WHERE user_id=?", (REF_BONUS, ref))
+
     conn.commit()
-    await update.message.reply_text("🔥 BOT ACTIVO $$$", reply_markup=menu)
 
-async def grupo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(f"👥 Grupo:\n{WHATSAPP}")
+    await update.message.reply_text(
+        f"🔥 BOT ACTIVO $$$\n\nTu link:\nhttps://t.me/TU_BOT?start={user_id}",
+        reply_markup=menu
+    )
 
-async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    bal = cursor.execute("SELECT balance FROM users WHERE user_id=?", (update.effective_user.id,)).fetchone()[0]
-    await update.message.reply_text(f"💰 ${bal:.6f}")
-
+# ===== ADS =====
 async def ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    ads_today, last_ad = cursor.execute("SELECT ads_today,last_ad FROM users WHERE user_id=?", (user_id,)).fetchone()
+
+    ads_today, last_ad, progress = cursor.execute(
+        "SELECT ads_today,last_ad,ads_progress FROM users WHERE user_id=?",
+        (user_id,)
+    ).fetchone()
 
     if ads_today >= LIMITE_ADS:
         return await update.message.reply_text("❌ Límite diario")
@@ -105,7 +118,7 @@ async def ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if time.time() - last_ad < 10:
         return await update.message.reply_text("⏳ Espera")
 
-    wait = random.choice([15, 30])
+    wait = random.randint(35, 108)
     ad = random.choice(ADS)
 
     context.user_data["time"] = time.time()
@@ -114,32 +127,76 @@ async def ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cursor.execute("UPDATE users SET last_ad=? WHERE user_id=?", (int(time.time()), user_id))
     conn.commit()
 
-    await update.message.reply_text(f"🔗 {ad}\n⏳ Espera {wait}s y escribe OK")
+    await update.message.reply_text(
+        f"🔗 {ad}\n⏳ Espera {wait}s y escribe OK\n\nProgreso: {progress}/{ADS_REQUIRED}"
+    )
 
+# ===== CONFIRM =====
 async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.text.lower() != "ok":
         return
 
-    start_time = context.user_data.get("time")
+    start = context.user_data.get("time")
     wait = context.user_data.get("wait")
 
-    if not start_time or time.time() - start_time < wait:
-        return await update.message.reply_text("⏳ Espera el tiempo completo")
+    if not start or time.time() - start < wait:
+        return await update.message.reply_text("⏳ No completaste el tiempo")
 
     user_id = update.effective_user.id
 
-    cursor.execute("UPDATE users SET balance=balance+?, ads_today=ads_today+1 WHERE user_id=?", (REWARD_AD, user_id))
+    cursor.execute("UPDATE users SET ads_progress = ads_progress + 1 WHERE user_id=?", (user_id,))
+    progress = cursor.execute("SELECT ads_progress FROM users WHERE user_id=?", (user_id,)).fetchone()[0]
+
+    if progress >= ADS_REQUIRED:
+        reward = REWARD_AD * ADS_REQUIRED
+        cursor.execute("""
+        UPDATE users SET balance = balance + ?, ads_progress = 0, ads_today = ads_today + 1
+        WHERE user_id=?
+        """, (reward, user_id))
+
+        await update.message.reply_text(f"💸 GANASTE {reward}")
+    else:
+        await update.message.reply_text(f"✅ ({progress}/{ADS_REQUIRED})")
+
     conn.commit()
-
     context.user_data.clear()
-    await update.message.reply_text(f"💸 +{REWARD_AD}")
 
+# ===== TAREAS =====
 async def tareas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = "📋 TAREAS:\n\n"
     for i, t in enumerate(TASKS, 1):
         msg += f"{i}. {t}\n\n"
+    msg += "Envía número"
     await update.message.reply_text(msg)
 
+async def validar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message.text.isdigit():
+        return
+
+    user_id = update.effective_user.id
+
+    last = cursor.execute("SELECT last_task FROM users WHERE user_id=?", (user_id,)).fetchone()[0]
+
+    if time.time() - last < 60:
+        return await update.message.reply_text("⏳ Espera 1 min")
+
+    cursor.execute("UPDATE users SET balance=balance+?, last_task=? WHERE user_id=?",
+                   (REWARD_TASK, int(time.time()), user_id))
+    conn.commit()
+
+    await update.message.reply_text(f"💸 +{REWARD_TASK}")
+
+# ===== RANKING =====
+async def ranking(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    top = cursor.execute("SELECT user_id, balance FROM users ORDER BY balance DESC LIMIT 10").fetchall()
+
+    msg = "🏆 TOP:\n\n"
+    for i, u in enumerate(top, 1):
+        msg += f"{i}. {u[0]} - ${u[1]:.4f}\n"
+
+    await update.message.reply_text(msg)
+
+# ===== BONUS =====
 async def bonus(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     today = str(datetime.now().date())
@@ -149,72 +206,48 @@ async def bonus(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if last == today:
         return await update.message.reply_text("❌ Ya reclamado")
 
-    cursor.execute("UPDATE users SET balance=balance+?, last_bonus=? WHERE user_id=?", (BONUS, today, user_id))
+    cursor.execute("UPDATE users SET balance=balance+?, last_bonus=? WHERE user_id=?",
+                   (BONUS, today, user_id))
     conn.commit()
 
     await update.message.reply_text(f"🎁 +{BONUS}")
 
-async def retirar(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    bal = cursor.execute("SELECT balance FROM users WHERE user_id=?", (user_id,)).fetchone()[0]
+# ===== OTROS =====
+async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    bal = cursor.execute("SELECT balance FROM users WHERE user_id=?", (update.effective_user.id,)).fetchone()[0]
+    await update.message.reply_text(f"💰 ${bal:.6f}")
 
-    if bal < MIN_RETIRO:
-        return await update.message.reply_text("❌ Mínimo $1")
+async def grupo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(f"👥 {WHATSAPP}")
 
-    context.user_data["retiro"] = True
-    await update.message.reply_text("Envía tu wallet")
-
-async def wallet(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.user_data.get("retiro"):
-        return
-
-    user_id = update.effective_user.id
-    bal = cursor.execute("SELECT balance FROM users WHERE user_id=?", (user_id,)).fetchone()[0]
-
-    cursor.execute("INSERT INTO withdrawals (user_id,amount,wallet,status) VALUES (?,?,?,?)",
-                   (user_id, bal, update.message.text, "pendiente"))
-
-    cursor.execute("UPDATE users SET balance=0 WHERE user_id=?", (user_id,))
-    conn.commit()
-
-    context.user_data.clear()
-    await update.message.reply_text("✅ Retiro enviado")
-
-async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        return
-
-    users = cursor.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-    await update.message.reply_text(f"👑 Usuarios: {users}")
-
+# ===== HANDLER =====
 async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
+    t = update.message.text
 
-    if "Balance" in text:
+    if "Balance" in t:
         await balance(update, context)
-    elif "Ver anuncios" in text:
+    elif "Ver anuncios" in t:
         await ads(update, context)
-    elif "Tareas" in text:
+    elif "Tareas" in t:
         await tareas(update, context)
-    elif "Bono" in text:
+    elif "Bono" in t:
         await bonus(update, context)
-    elif "Retirar" in text:
-        await retirar(update, context)
-    elif "Grupo" in text:
+    elif "Ranking" in t:
+        await ranking(update, context)
+    elif "Grupo" in t:
         await grupo(update, context)
     else:
         await confirm(update, context)
-        await wallet(update, context)
+        await validar(update, context)
 
 # ===== RUN =====
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("admin", admin))
     app.add_handler(MessageHandler(filters.TEXT, handle))
 
-    print("🤖 BOT corriendo...")
+    print("🤖 BOT PRO ACTIVO")
     app.run_polling()
 
 if __name__ == "__main__":
